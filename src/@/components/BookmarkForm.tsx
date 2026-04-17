@@ -25,7 +25,7 @@ import { AxiosError } from 'axios';
 import { toast } from '../../hooks/use-toast.ts';
 import { Toaster } from './ui/Toaster.tsx';
 import { getCollections } from '../lib/actions/collections.ts';
-import { getTags } from '../lib/actions/tags.ts';
+import { getShouldUseTagSearch, getTags } from '../lib/actions/tags.ts';
 import { ExternalLink, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover.tsx';
 import { CaretSortIcon } from '@radix-ui/react-icons';
@@ -44,6 +44,7 @@ const BookmarkForm = () => {
   const [openCollections, setOpenCollections] = useState<boolean>(false);
   const [uploadImage, setUploadImage] = useState<boolean>(false);
   const [state, setState] = useState<'capturing' | 'uploading' | null>(null);
+  const [tagSearch, setTagSearch] = useState<string>('');
 
   const [isConfigured, setIsConfigured] = useState(false);
   const [isDuplicate, setIsDuplicate] = useState(false);
@@ -195,6 +196,16 @@ const BookmarkForm = () => {
     enabled: isConfigured,
   });
 
+  const { data: shouldUseTagSearch = false } = useQuery({
+    queryKey: ['tag-search-support', config?.baseUrl, config?.apiKey],
+    queryFn: async () =>
+      await getShouldUseTagSearch(
+        config?.baseUrl as string,
+        config?.apiKey as string
+      ),
+    enabled: isConfigured && openOptions,
+  });
+  const effectiveTagSearch = shouldUseTagSearch ? tagSearch : '';
   const {
     isLoading: loadingTags,
     data: tagsData,
@@ -203,12 +214,13 @@ const BookmarkForm = () => {
     isFetchingNextPage,
     fetchNextPage,
   } = useInfiniteQuery(
-    ['tags', config?.baseUrl, config?.apiKey],
+    ['tags', config?.baseUrl, config?.apiKey, effectiveTagSearch],
     async ({ pageParam = 0 }) => {
       return await getTags(
         config?.baseUrl as string,
         config?.apiKey as string,
-        pageParam
+        pageParam,
+        effectiveTagSearch
       );
     },
     {
@@ -456,6 +468,7 @@ const BookmarkForm = () => {
                         tags={tags}
                         hasNextPage={hasNextPage}
                         isFetchingNextPage={isFetchingNextPage}
+                        onSearchChange={setTagSearch}
                         onReachEnd={() => {
                           if (!hasNextPage || isFetchingNextPage) return;
                           void fetchNextPage();

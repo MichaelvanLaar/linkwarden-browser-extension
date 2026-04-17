@@ -31,8 +31,15 @@ type PaginatedTagsResponse = {
 };
 
 const MIN_TAG_PAGINATION_VERSION = '2.14.0';
+const MIN_TAG_SEARCH_VERSION = '2.14.1';
 const TAG_SORT_NAME_ASC = 2;
-const paginationSupportCache = new Map<string, boolean>();
+const tagFeatureSupportCache = new Map<
+  string,
+  {
+    shouldUsePagination: boolean;
+    shouldUseSearch: boolean;
+  }
+>();
 
 export type TagsPage = {
   tags: ResponseTags[];
@@ -124,42 +131,60 @@ const getInstanceVersion = async (baseUrl: string, apiKey: string) => {
   }
 };
 
-const getPaginationSupportCacheKey = (baseUrl: string, apiKey: string) =>
+const getTagFeatureSupportCacheKey = (baseUrl: string, apiKey: string) =>
   `${baseUrl}::${apiKey}`;
 
-const getShouldUsePagination = async (baseUrl: string, apiKey: string) => {
-  const cacheKey = getPaginationSupportCacheKey(baseUrl, apiKey);
-  const cachedValue = paginationSupportCache.get(cacheKey);
+const getTagFeatures = async (baseUrl: string, apiKey: string) => {
+  const cacheKey = getTagFeatureSupportCacheKey(baseUrl, apiKey);
+  const cachedValue = tagFeatureSupportCache.get(cacheKey);
 
   if (cachedValue !== undefined) return cachedValue;
 
   const instanceVersion = await getInstanceVersion(baseUrl, apiKey);
-  const shouldUsePagination = isAtLeastInstanceVersion(
-    instanceVersion,
-    MIN_TAG_PAGINATION_VERSION
-  );
+  const nextValue = {
+    shouldUsePagination: isAtLeastInstanceVersion(
+      instanceVersion,
+      MIN_TAG_PAGINATION_VERSION
+    ),
+    shouldUseSearch: isAtLeastInstanceVersion(
+      instanceVersion,
+      MIN_TAG_SEARCH_VERSION
+    ),
+  };
 
-  paginationSupportCache.set(cacheKey, shouldUsePagination);
+  tagFeatureSupportCache.set(cacheKey, nextValue);
 
-  return shouldUsePagination;
+  return nextValue;
 };
+
+export const getShouldUseTagSearch = async (baseUrl: string, apiKey: string) =>
+  (await getTagFeatures(baseUrl, apiKey)).shouldUseSearch;
 
 export async function getTags(
   baseUrl: string,
   apiKey: string,
-  cursor = 0
+  cursor = 0,
+  search = ''
 ): Promise<TagsPage> {
-  const shouldUsePagination = await getShouldUsePagination(baseUrl, apiKey);
+  const { shouldUsePagination, shouldUseSearch } = await getTagFeatures(
+    baseUrl,
+    apiKey
+  );
 
   const headers = {
     Authorization: `Bearer ${apiKey}`,
   };
 
   const searchParams = new URLSearchParams();
+  const normalizedSearch = search.trim();
   searchParams.set('sort', String(TAG_SORT_NAME_ASC));
 
   if (shouldUsePagination) {
     searchParams.set('cursor', String(cursor));
+  }
+
+  if (shouldUseSearch && normalizedSearch) {
+    searchParams.set('search', normalizedSearch);
   }
 
   const initialResponse = await axios.get<
