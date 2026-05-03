@@ -1,4 +1,4 @@
-import { FC, useState } from 'react';
+import { FC, UIEvent, useMemo, useState } from 'react';
 import { Button } from './ui/Button.tsx';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover.tsx';
 import { Check, ChevronsUpDown } from 'lucide-react';
@@ -8,18 +8,53 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandList,
 } from './ui/Command.tsx';
 import { cn } from '../lib/utils.ts';
+import { ResponseTags } from '../lib/actions/tags.ts';
 
 interface TagInputProps {
   onChange: (tags: { name: string }[]) => void;
   value: { name: string; id?: number }[];
-  tags: { id: number; name: string }[] | undefined;
+  tags: Pick<ResponseTags, 'id' | 'name'>[] | undefined;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onReachEnd?: () => void;
+  onSearchChange?: (value: string) => void;
 }
 
-export const TagInput: FC<TagInputProps> = ({ value, onChange, tags }) => {
+export const TagInput: FC<TagInputProps> = ({
+  value,
+  onChange,
+  tags,
+  hasNextPage,
+  isFetchingNextPage,
+  onReachEnd,
+  onSearchChange,
+}) => {
   const [open, setOpen] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>('');
+  const filteredTags = useMemo(() => {
+    if (!Array.isArray(tags)) return [];
+
+    const normalizedInputValue = inputValue.trim().toLowerCase();
+
+    if (!normalizedInputValue) return tags;
+
+    return tags.filter((tag) =>
+      tag.name.toLowerCase().includes(normalizedInputValue)
+    );
+  }, [inputValue, tags]);
+
+  const handleListScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!hasNextPage || isFetchingNextPage || !onReachEnd) return;
+
+    const target = event.currentTarget;
+    const reachedBottom =
+      target.scrollTop + target.clientHeight >= target.scrollHeight - 16;
+
+    if (reachedBottom) onReachEnd();
+  };
 
   function handleAddTag() {
     if (inputValue && value.some((tagObj) => tagObj.name === inputValue))
@@ -27,6 +62,7 @@ export const TagInput: FC<TagInputProps> = ({ value, onChange, tags }) => {
     if (inputValue) {
       const newTags = [...value, { name: inputValue }];
       setInputValue('');
+      onSearchChange?.('');
       onChange(newTags);
     }
   }
@@ -53,32 +89,34 @@ export const TagInput: FC<TagInputProps> = ({ value, onChange, tags }) => {
           </Button>
         </PopoverTrigger>
         <div className="min-w-full inset-x-0">
-          <PopoverContent className="min-w-full p-0 overflow-y-auto max-h-[200px]">
-            <Command className="flex-grow min-w-full">
+          <PopoverContent className="min-w-full p-0">
+            <Command className="flex-grow min-w-full" shouldFilter={false}>
               <CommandInput
                 className="min-w-[280px]"
                 placeholder="Search tag or add tag (Enter)"
                 value={inputValue}
-                onValueChange={setInputValue}
+                onValueChange={(value) => {
+                  setInputValue(value);
+                  onSearchChange?.(value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     handleAddTag();
                   }
                 }}
               />
-              <CommandEmpty>No tag found.</CommandEmpty>
-              {Array.isArray(tags) && (
-                <CommandGroup className="w-full">
-                  {tags
-                    .filter((tag) =>
-                      tag.name
-                        .toLowerCase()
-                        .includes(inputValue.trim().toLowerCase())
-                    )
-                    .map((tag: { name: string }) => (
+              <CommandList
+                className="max-h-[200px]"
+                onScroll={handleListScroll}
+              >
+                <CommandEmpty>No tag found.</CommandEmpty>
+                {Array.isArray(tags) && (
+                  <CommandGroup className="w-full">
+                    {filteredTags.map((tag: { name: string }) => (
                       <CommandItem
                         className="w-full"
                         key={tag.name}
+                        value={tag.name}
                         onSelect={() => {
                           if (Array.isArray(value)) {
                             if (value.some((v) => v.name === tag.name)) {
@@ -102,8 +140,18 @@ export const TagInput: FC<TagInputProps> = ({ value, onChange, tags }) => {
                         {tag.name}
                       </CommandItem>
                     ))}
-                </CommandGroup>
-              )}
+                    {isFetchingNextPage ? (
+                      <CommandItem
+                        className="w-full"
+                        value="Loading more tags..."
+                        disabled
+                      >
+                        Loading more tags...
+                      </CommandItem>
+                    ) : null}
+                  </CommandGroup>
+                )}
+              </CommandList>
             </Command>
           </PopoverContent>
         </div>

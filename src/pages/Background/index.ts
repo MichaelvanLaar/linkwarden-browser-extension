@@ -1,6 +1,8 @@
 import {
   getBrowser,
   getCurrentTabInfo,
+  hasAPI,
+  isSafari,
   updateBadge,
 } from '../../@/lib/utils.ts';
 // import BookmarkTreeNode = chrome.bookmarks.BookmarkTreeNode;
@@ -240,7 +242,7 @@ async function genericOnClick(
     }
     default:
       // Handle cases where sync is enabled or not
-      if (syncBookmarks) {
+      if (syncBookmarks && hasAPI('bookmarks.create')) {
         browser.bookmarks.create({
           parentId: '1',
           title: tab.title,
@@ -277,15 +279,9 @@ async function genericOnClick(
 }
 browser.runtime.onInstalled.addListener(async function () {
   // Create one test item for each context type.
-  const contexts: ContextType[] = [
-    'page',
-    'selection',
-    'link',
-    'editable',
-    'image',
-    'video',
-    'audio',
-  ];
+  const contexts: ContextType[] = isSafari()
+    ? ['page', 'selection', 'link']
+    : ['page', 'selection', 'link', 'editable', 'image', 'video', 'audio'];
   for (const context of contexts) {
     const title: string = 'Add link to Linkwarden';
     browser.contextMenus.create({
@@ -346,79 +342,81 @@ browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 })();
 
-// Omnibox implementation
+// Omnibox implementation (not available in Safari)
 
-browser.omnibox.onInputStarted.addListener(async () => {
-  const configured = await isConfigured();
-  const description = configured
-    ? 'Search links in linkwarden'
-    : 'Please configure the extension first';
-
-  browser.omnibox.setDefaultSuggestion({
-    description: description,
-  });
-});
-
-browser.omnibox.onInputChanged.addListener(
-  async (
-    text: string,
-    suggest: (arg0: { content: string; description: string }[]) => void
-  ) => {
+if (hasAPI('omnibox.onInputStarted')) {
+  browser.omnibox.onInputStarted.addListener(async () => {
     const configured = await isConfigured();
+    const description = configured
+      ? 'Search links in linkwarden'
+      : 'Please configure the extension first';
 
-    if (!configured) {
-      return;
-    }
-
-    const currentBookmarks = await getBookmarksMetadata();
-
-    const searchedBookmarks = currentBookmarks.filter((bookmark) => {
-      return bookmark.name?.includes(text) || bookmark.url.includes(text);
+    browser.omnibox.setDefaultSuggestion({
+      description: description,
     });
+  });
 
-    const bookmarkSuggestions = searchedBookmarks.map((bookmark) => {
-      return {
-        content: bookmark.url,
-        description: bookmark.name || bookmark.url,
-      };
-    });
-    suggest(bookmarkSuggestions);
-  }
-);
+  browser.omnibox.onInputChanged.addListener(
+    async (
+      text: string,
+      suggest: (arg0: { content: string; description: string }[]) => void
+    ) => {
+      const configured = await isConfigured();
 
-// This part was taken https://github.com/sissbruecker/linkding-extension/blob/master/src/background.js Thanks to @sissbruecker
+      if (!configured) {
+        return;
+      }
 
-browser.omnibox.onInputEntered.addListener(
-  async (content: string, disposition: OnInputEnteredDisposition) => {
-    if (!(await isConfigured()) || !content) {
-      return;
+      const currentBookmarks = await getBookmarksMetadata();
+
+      const searchedBookmarks = currentBookmarks.filter((bookmark) => {
+        return bookmark.name?.includes(text) || bookmark.url.includes(text);
+      });
+
+      const bookmarkSuggestions = searchedBookmarks.map((bookmark) => {
+        return {
+          content: bookmark.url,
+          description: bookmark.name || bookmark.url,
+        };
+      });
+      suggest(bookmarkSuggestions);
     }
+  );
 
-    const isUrl = /^http(s)?:\/\//.test(content);
-    const url = isUrl ? content : `lk`;
+  // This part was taken https://github.com/sissbruecker/linkding-extension/blob/master/src/background.js Thanks to @sissbruecker
 
-    // Edge doesn't allow updating the New Tab Page (tested with version 117).
-    // Trying to do so will throw: "Error: Cannot update NTP tab."
-    // As a workaround, open a new tab instead.
-    if (disposition === 'currentTab') {
-      const tabInfo = await getCurrentTabInfo();
-      if (tabInfo.url === 'edge://newtab/') {
-        disposition = 'newForegroundTab';
+  browser.omnibox.onInputEntered.addListener(
+    async (content: string, disposition: OnInputEnteredDisposition) => {
+      if (!(await isConfigured()) || !content) {
+        return;
+      }
+
+      const isUrl = /^http(s)?:\/\//.test(content);
+      const url = isUrl ? content : `lk`;
+
+      // Edge doesn't allow updating the New Tab Page (tested with version 117).
+      // Trying to do so will throw: "Error: Cannot update NTP tab."
+      // As a workaround, open a new tab instead.
+      if (disposition === 'currentTab') {
+        const tabInfo = await getCurrentTabInfo();
+        if (tabInfo.url === 'edge://newtab/') {
+          disposition = 'newForegroundTab';
+        }
+      }
+
+      switch (disposition) {
+        case 'currentTab':
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          await browser.tabs.update({ url });
+          break;
+        case 'newForegroundTab':
+          await browser.tabs.create({ url });
+          break;
+        case 'newBackgroundTab':
+          await browser.tabs.create({ url, active: false });
+          break;
       }
     }
-
-    switch (disposition) {
-      case 'currentTab':
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        await browser.tabs.update({ url });
-        break;
-      case 'newForegroundTab':
-        await browser.tabs.create({ url });
-        break;
-      case 'newBackgroundTab':
-        await browser.tabs.create({ url, active: false });
-        break;
-    }
-  }
-);
+  );
+}

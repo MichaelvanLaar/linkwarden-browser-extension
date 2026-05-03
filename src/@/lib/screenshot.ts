@@ -72,19 +72,58 @@ const drawImagesOnCanvas = async (
 };
 
 async function executeScript(tabId: number, func: any, args: any[] = []) {
-  if (typeof chrome.scripting !== 'undefined') {
+  if (
+    typeof chrome !== 'undefined' &&
+    typeof chrome.scripting !== 'undefined'
+  ) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       func,
       args,
     });
     return results[0]?.result;
-  } else {
-    const results = await browser.tabs.executeScript(tabId, {
-      code: `(${func})(${args.map((arg) => JSON.stringify(arg)).join(',')})`,
-    });
-    return results[0];
   }
+
+  const results = await browser.tabs.executeScript(tabId, {
+    code: `(${func})(${args.map((arg) => JSON.stringify(arg)).join(',')})`,
+  });
+  return results[0];
+}
+
+async function safeExecuteScript(tabId: number, func: any, args: any[] = []) {
+  try {
+    await executeScript(tabId, func, args);
+  } catch {
+    // Best effort cleanup for browsers that reject script execution.
+  }
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [meta = '', encodedData = ''] = dataUrl.split(',', 2);
+  const mimeType = meta.match(/^data:(.*?)(;base64)?$/)?.[1] ?? 'image/png';
+
+  if (meta.includes(';base64')) {
+    const binary = atob(encodedData);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(encodedData)], { type: mimeType });
+}
+
+async function captureVisibleTabScreenshot(): Promise<Blob> {
+  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+  if (!tab || !tab.id) {
+    throw new Error('Unable to get the current tab.');
+  }
+  const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId!, {
+    format: 'png',
+  });
+  return dataUrlToBlob(dataUrl);
 }
 
 async function captureFullPageScreenshot(): Promise<Blob> {
@@ -218,8 +257,7 @@ async function captureFullPageScreenshot(): Promise<Blob> {
     const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId!, {
       format: 'png',
     });
-    const blob = await fetch(dataUrl).then((res) => res.blob());
-    blobs.push(blob);
+    blobs.push(dataUrlToBlob(dataUrl));
   }
 
   const canvas = document.createElement('canvas');
@@ -235,11 +273,30 @@ async function captureFullPageScreenshot(): Promise<Blob> {
     dpr
   );
 
-  await executeScript(tab.id, removeHideScrollbarClass);
-  await executeScript(tab.id, restoreFixedElements, [originalStyles]);
-  await executeScript(tab.id, removeDisableSmoothScrollbarClass);
+  await safeExecuteScript(tab.id, removeHideScrollbarClass);
+  await safeExecuteScript(tab.id, restoreFixedElements, [originalStyles]);
+  await safeExecuteScript(tab.id, removeDisableSmoothScrollbarClass);
 
   return resultBlob;
 }
 
-export default captureFullPageScreenshot;
+async function captureScreenshot(): Promise<Blob> {
+  try {
+    return await captureFullPageScreenshot();
+  } catch (fullPageError) {
+    console.warn(
+      'Full-page screenshot failed, falling back to visible tab capture.',
+      fullPageError
+    );
+    try {
+      return await captureVisibleTabScreenshot();
+    } catch (visibleTabError) {
+      console.error('Visible tab screenshot capture failed.', visibleTabError);
+      throw new Error(
+        'Screenshot capture is not available for this page.'
+      );
+    }
+  }
+}
+
+export default captureScreenshot;

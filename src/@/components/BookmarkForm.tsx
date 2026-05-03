@@ -17,15 +17,15 @@ import { Button } from './ui/Button.tsx';
 import { TagInput } from './TagInput.tsx';
 import { Textarea } from './ui/Textarea.tsx';
 import { getCurrentTabInfo, updateBadge } from '../lib/utils.ts';
-import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { getConfig, isConfigured as getIsConfigured } from '../lib/config.ts';
 import { checkLinkExists, postLink } from '../lib/actions/links.ts';
 import { AxiosError } from 'axios';
 import { toast } from '../../hooks/use-toast.ts';
 import { Toaster } from './ui/Toaster.tsx';
 import { getCollections } from '../lib/actions/collections.ts';
-import { getTags } from '../lib/actions/tags.ts';
+import { getShouldUseTagSearch, getTags } from '../lib/actions/tags.ts';
 import { ExternalLink, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover.tsx';
 import { CaretSortIcon } from '@radix-ui/react-icons';
@@ -44,6 +44,7 @@ const BookmarkForm = () => {
   const [openCollections, setOpenCollections] = useState<boolean>(false);
   const [uploadImage, setUploadImage] = useState<boolean>(false);
   const [state, setState] = useState<'capturing' | 'uploading' | null>(null);
+  const [tagSearch, setTagSearch] = useState<string>('');
 
   const [isConfigured, setIsConfigured] = useState(false);
   const [isDuplicate, setIsDuplicate] = useState(false);
@@ -195,24 +196,46 @@ const BookmarkForm = () => {
     enabled: isConfigured,
   });
 
-  const {
-    isLoading: loadingTags,
-    data: tags,
-    error: tagsError,
-  } = useQuery({
-    queryKey: ['tags'],
-    queryFn: async () => {
-      const response = await getTags(
+  const { data: shouldUseTagSearch = false } = useQuery({
+    queryKey: ['tag-search-support', config?.baseUrl, config?.apiKey],
+    queryFn: async () =>
+      await getShouldUseTagSearch(
         config?.baseUrl as string,
         config?.apiKey as string
-      );
-
-      return response.data.response.sort((a, b) => {
-        return a.name.localeCompare(b.name);
-      });
-    },
-    enabled: isConfigured,
+      ),
+    enabled: isConfigured && openOptions,
   });
+  const effectiveTagSearch = shouldUseTagSearch ? tagSearch : '';
+  const {
+    isLoading: loadingTags,
+    data: tagsData,
+    error: tagsError,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery(
+    ['tags', config?.baseUrl, config?.apiKey, effectiveTagSearch],
+    async ({ pageParam = 0 }) => {
+      return await getTags(
+        config?.baseUrl as string,
+        config?.apiKey as string,
+        pageParam,
+        effectiveTagSearch
+      );
+    },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+      enabled: isConfigured && openOptions,
+    }
+  );
+
+  const tags = useMemo(() => {
+    return (
+      tagsData?.pages
+        .flatMap((page) => page.tags)
+        .sort((a, b) => a.name.localeCompare(b.name)) ?? []
+    );
+  }, [tagsData]);
 
   return (
     <div>
@@ -427,18 +450,29 @@ const BookmarkForm = () => {
                         onChange={field.onChange}
                         value={[{ name: 'Loading tags...' }]}
                         tags={[{ id: 1, name: 'Loading tags...' }]}
+                        hasNextPage={false}
+                        isFetchingNextPage={false}
                       />
                     ) : tagsError ? (
                       <TagInput
                         onChange={field.onChange}
                         value={[{ name: 'Not found' }]}
                         tags={[{ id: 1, name: 'Not found' }]}
+                        hasNextPage={false}
+                        isFetchingNextPage={false}
                       />
                     ) : (
                       <TagInput
                         onChange={field.onChange}
                         value={field.value ?? []}
                         tags={tags}
+                        hasNextPage={hasNextPage}
+                        isFetchingNextPage={isFetchingNextPage}
+                        onSearchChange={setTagSearch}
+                        onReachEnd={() => {
+                          if (!hasNextPage || isFetchingNextPage) return;
+                          void fetchNextPage();
+                        }}
                       />
                     )}
                     <FormMessage />

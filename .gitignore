@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-safari
 *.local
 dist.crx
 dist.pem
@@ -26,3 +27,8 @@ dist.pem
 *.sw?
 
 linkwarden.zip
+
+# Safari / Xcode
+**/build/
+**/DerivedData/
+*.xcuserdata

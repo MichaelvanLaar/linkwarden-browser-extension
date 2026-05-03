@@ -57,6 +57,24 @@ export function openOptions() {
   getBrowser().runtime.openOptionsPage();
 }
 
+export function isSafari(): boolean {
+  try {
+    return /^safari-web-extension:/.test(getBrowser().runtime.getURL(''));
+  } catch {
+    return false;
+  }
+}
+
+export function hasAPI(api: string): boolean {
+  const b = getBrowser();
+  let obj: any = b;
+  for (const part of api.split('.')) {
+    if (!obj || typeof obj[part] === 'undefined') return false;
+    obj = obj[part];
+  }
+  return true;
+}
+
 export async function updateBadge(tabId: number | undefined) {
   if (!tabId) return;
 
