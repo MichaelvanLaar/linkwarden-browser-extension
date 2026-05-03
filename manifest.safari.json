@@ -3,7 +3,7 @@
   "name": "Linkwarden",
   "description": "The browser extension for Linkwarden.",
   "homepage_url": "https://linkwarden.app/",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "action": {
     "default_popup": "index.html",
     "default_icon": {
