@@ -17,8 +17,8 @@ import {
 } from '../lib/validators/optionsForm.ts';
 import { Input } from './ui/Input.tsx';
 import { Button } from './ui/Button.tsx';
-import { useMutation } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import {
   clearConfig,
   getConfig,
@@ -30,6 +30,7 @@ import { toast } from '../../hooks/use-toast.ts';
 import { AxiosError } from 'axios';
 import { clearBookmarksMetadata } from '../lib/cache.ts';
 import { getSession } from '../lib/auth/auth.ts';
+import { getCollections } from '../lib/actions/collections.ts';
 import {
   Select,
   SelectContent,
@@ -39,6 +40,9 @@ import {
 } from './ui/Select.tsx'; // Import the Select component
 
 const OptionsForm = () => {
+  const queryClient = useQueryClient();
+  const [configured, setConfigured] = useState(false);
+
   const form = useForm<optionsFormValues>({
     resolver: zodResolver(optionsFormSchema),
     defaultValues: {
@@ -49,7 +53,27 @@ const OptionsForm = () => {
       apiKey: '',
       syncBookmarks: false,
       defaultCollection: 'Unorganized',
+      defaultCollectionId: undefined,
     },
+  });
+
+  // Fetch the collections from the configured Linkwarden account so the user
+  // can only pick a valid collection as the default.
+  const {
+    data: collections,
+    isLoading: loadingCollections,
+    error: collectionsError,
+  } = useQuery({
+    queryKey: ['options-collections'],
+    queryFn: async () => {
+      const cfg = await getConfig();
+      const response = await getCollections(cfg.baseUrl, cfg.apiKey);
+
+      return response.data.response.sort((a, b) =>
+        a.pathname.localeCompare(b.pathname)
+      );
+    },
+    enabled: configured,
   });
 
   const { mutate: onReset, isLoading: resetLoading } = useMutation({
@@ -81,9 +105,12 @@ const OptionsForm = () => {
         apiKey: '',
         syncBookmarks: false,
         defaultCollection: 'Unorganized',
+        defaultCollectionId: undefined,
       });
       await clearConfig();
       await clearBookmarksMetadata();
+      setConfigured(false);
+      queryClient.removeQueries({ queryKey: ['options-collections'] });
       return;
     },
   });
@@ -156,11 +183,19 @@ const OptionsForm = () => {
       await saveConfig({
         baseUrl: values.baseUrl,
         defaultCollection: values.defaultCollection,
+        defaultCollectionId: values.defaultCollectionId,
         syncBookmarks: values.syncBookmarks,
         apiKey:
           values.method === 'apiKey' && values.apiKey
             ? values.apiKey
             : values.data.response.token,
+      });
+
+      // Now that valid credentials are stored, (re)load the collections so the
+      // default collection selector reflects the configured account.
+      setConfigured(true);
+      await queryClient.invalidateQueries({
+        queryKey: ['options-collections'],
       });
 
       toast({
@@ -174,10 +209,11 @@ const OptionsForm = () => {
 
   useEffect(() => {
     (async () => {
-      const configured = await isConfigured();
-      if (configured) {
+      const isAlreadyConfigured = await isConfigured();
+      if (isAlreadyConfigured) {
         const cachedOptions = await getConfig();
         form.reset(cachedOptions);
+        setConfigured(true);
       }
     })();
   }, [form]);
@@ -303,25 +339,82 @@ const OptionsForm = () => {
             </>
           )}
 
-          {/* Commented out fields */}
-          {/* 
+          {/* Default collection selector, populated from the configured account */}
           <FormField
             control={control}
-            name="defaultCollection"
+            name="defaultCollectionId"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Default collection</FormLabel>
                 <FormDescription>
-                  Default collection to add bookmarks to.
+                  New links will be pre-assigned to this collection in the
+                  popup.
                 </FormDescription>
-                <FormControl>
-                  <Input placeholder="Unorganized" {...field} />
-                </FormControl>
+                {configured ? (
+                  collectionsError ? (
+                    <p className="text-sm text-red-600">
+                      Could not load collections. Please check your connection
+                      and credentials.
+                    </p>
+                  ) : (
+                    <FormControl>
+                      <Select
+                        value={
+                          field.value ? String(field.value) : 'unorganized'
+                        }
+                        onValueChange={(value) => {
+                          if (value === 'unorganized') {
+                            field.onChange(undefined);
+                            form.setValue('defaultCollection', 'Unorganized');
+                            return;
+                          }
+                          const id = Number(value);
+                          field.onChange(id);
+                          const selected = collections?.find(
+                            (collection) => collection.id === id
+                          );
+                          form.setValue(
+                            'defaultCollection',
+                            selected?.name ?? 'Unorganized'
+                          );
+                        }}
+                        disabled={loadingCollections}
+                      >
+                        <SelectTrigger className="w-full justify-between bg-neutral-100 dark:bg-neutral-900 outline-none focus:outline-none ring-0 focus:ring-0">
+                          <SelectValue
+                            placeholder={
+                              loadingCollections
+                                ? 'Loading collections...'
+                                : 'Select a collection'
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unorganized">
+                            Unorganized
+                          </SelectItem>
+                          {collections?.map((collection) => (
+                            <SelectItem
+                              key={collection.id}
+                              value={String(collection.id)}
+                            >
+                              {collection.pathname}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                  )
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Save your account settings first to choose a default
+                    collection.
+                  </p>
+                )}
                 <FormMessage />
               </FormItem>
             )}
           />
-          */}
 
           {/* 
           <FormField

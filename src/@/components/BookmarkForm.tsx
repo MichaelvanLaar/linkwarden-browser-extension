@@ -17,7 +17,7 @@ import { Button } from './ui/Button.tsx';
 import { TagInput } from './TagInput.tsx';
 import { Textarea } from './ui/Textarea.tsx';
 import { getCurrentTabInfo, updateBadge } from '../lib/utils.ts';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { getConfig, isConfigured as getIsConfigured } from '../lib/config.ts';
 import { checkLinkExists, postLink } from '../lib/actions/links.ts';
@@ -52,6 +52,7 @@ const BookmarkForm = () => {
   const [config, setConfig] = useState<{
     baseUrl: string;
     defaultCollection: string;
+    defaultCollectionId?: number;
     apiKey: string;
     syncBookmarks: boolean;
   }>();
@@ -195,6 +196,32 @@ const BookmarkForm = () => {
     },
     enabled: isConfigured,
   });
+
+  // Once the account's collections are loaded, resolve the configured default
+  // collection to its full object (id/ownerId/name) so the link is saved into
+  // the exact collection. This runs only once (on the first successful load),
+  // so a later React Query refetch never overrides the user's manual choice.
+  const defaultAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!collections || !config || defaultAppliedRef.current) return;
+    defaultAppliedRef.current = true;
+
+    // Prefer matching by the stored id, but fall back to the name if the id no
+    // longer resolves (e.g. the collection was deleted) or was never stored.
+    const match =
+      (config.defaultCollectionId
+        ? collections.find((c) => c.id === config.defaultCollectionId)
+        : undefined) ??
+      collections.find((c) => c.name === config.defaultCollection);
+
+    if (match) {
+      form.setValue('collection', {
+        ownerId: match.ownerId,
+        id: match.id,
+        name: match.name,
+      });
+    }
+  }, [collections, config, form]);
 
   const { data: shouldUseTagSearch = false } = useQuery({
     queryKey: ['tag-search-support', config?.baseUrl, config?.apiKey],
