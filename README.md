@@ -8,6 +8,7 @@ The Official Browser Extension for [Linkwarden](https://github.com/linkwarden/li
 - Upload screenshots of the current page to Linkwarden.
 - Save all tabs in the current window to Linkwarden.
 - Sign in using API key or Username/Password.
+- Set a per-account default collection for saving links.
 
 ![Image](/assets/linkwarden-extension.png)
 
@@ -54,4 +55,15 @@ npm install
 npm run build
 ```
 
-After the above command, use the `/dist` folder as an unpacked extension in your browser.
+After the above command, load the `/dist` folder as an unpacked extension in your browser:
+
+**Chrome / Edge**
+
+1. Open `chrome://extensions` (or `edge://extensions`).
+2. Enable **Developer mode** (toggle in the top-right corner).
+3. Click **Load unpacked** and select the `dist/` folder.
+
+**Firefox**
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on…** and select any file inside `dist/` (e.g. `manifest.json`).
