@@ -52,6 +52,7 @@ const BookmarkForm = () => {
   const [config, setConfig] = useState<{
     baseUrl: string;
     defaultCollection: string;
+    defaultCollectionId?: number;
     apiKey: string;
     syncBookmarks: boolean;
   }>();
@@ -195,6 +196,26 @@ const BookmarkForm = () => {
     },
     enabled: isConfigured,
   });
+
+  // Once the account's collections are loaded, resolve the configured default
+  // collection to its full object (id/ownerId/name) so the link is saved into
+  // the exact collection. Skip if the user has already picked one.
+  useEffect(() => {
+    if (!collections || !config) return;
+    if (form.getValues('collection')?.id) return;
+
+    const match = config.defaultCollectionId
+      ? collections.find((c) => c.id === config.defaultCollectionId)
+      : collections.find((c) => c.name === config.defaultCollection);
+
+    if (match) {
+      form.setValue('collection', {
+        ownerId: match.ownerId,
+        id: match.id,
+        name: match.name,
+      });
+    }
+  }, [collections, config, form]);
 
   const { data: shouldUseTagSearch = false } = useQuery({
     queryKey: ['tag-search-support', config?.baseUrl, config?.apiKey],
