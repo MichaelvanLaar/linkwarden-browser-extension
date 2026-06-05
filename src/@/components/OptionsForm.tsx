@@ -359,8 +359,15 @@ const OptionsForm = () => {
                   ) : (
                     <FormControl>
                       <Select
-                        value={field.value ? String(field.value) : undefined}
+                        value={
+                          field.value ? String(field.value) : 'unorganized'
+                        }
                         onValueChange={(value) => {
+                          if (value === 'unorganized') {
+                            field.onChange(undefined);
+                            form.setValue('defaultCollection', 'Unorganized');
+                            return;
+                          }
                           const id = Number(value);
                           field.onChange(id);
                           const selected = collections?.find(
@@ -383,6 +390,9 @@ const OptionsForm = () => {
                           />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="unorganized">
+                            Unorganized
+                          </SelectItem>
                           {collections?.map((collection) => (
                             <SelectItem
                               key={collection.id}
