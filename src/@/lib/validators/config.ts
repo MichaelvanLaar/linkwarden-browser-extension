@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const configSchema = z.object({
   baseUrl: z.string().url(),
   defaultCollection: z.string().optional().default('Unorganized'),
-  defaultCollectionId: z.number().optional(),
+  defaultCollectionId: z.coerce.number().int().positive().optional(),
   apiKey: z.string(),
   syncBookmarks: z.boolean().optional().default(false),
 });

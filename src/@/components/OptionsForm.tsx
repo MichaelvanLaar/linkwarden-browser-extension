@@ -69,7 +69,7 @@ const OptionsForm = () => {
       const cfg = await getConfig();
       const response = await getCollections(cfg.baseUrl, cfg.apiKey);
 
-      return response.data.response.sort((a, b) =>
+      return [...response.data.response].sort((a, b) =>
         a.pathname.localeCompare(b.pathname)
       );
     },
@@ -360,7 +360,9 @@ const OptionsForm = () => {
                     <FormControl>
                       <Select
                         value={
-                          field.value ? String(field.value) : 'unorganized'
+                          field.value !== undefined
+                            ? String(field.value)
+                            : 'unorganized'
                         }
                         onValueChange={(value) => {
                           if (value === 'unorganized') {

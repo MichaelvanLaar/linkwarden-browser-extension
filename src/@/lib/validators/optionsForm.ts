@@ -6,7 +6,7 @@ export const optionsFormSchema = z.object({
   password: z.string(),
   syncBookmarks: z.boolean().default(false),
   defaultCollection: z.string().optional().default('Unorganized'),
-  defaultCollectionId: z.number().optional(),
+  defaultCollectionId: z.coerce.number().int().positive().optional(),
   useApiKey: z.boolean().default(false),
   apiKey: z.string().optional(),
   method: z.enum(['username', 'apiKey']).default('username'),

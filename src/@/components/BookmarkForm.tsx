@@ -206,19 +206,22 @@ const BookmarkForm = () => {
     if (!collections || !config || defaultAppliedRef.current) return;
     defaultAppliedRef.current = true;
 
-    // Prefer matching by the stored id, but fall back to the name if the id no
-    // longer resolves (e.g. the collection was deleted) or was never stored.
-    const match =
-      (config.defaultCollectionId
-        ? collections.find((c) => c.id === config.defaultCollectionId)
-        : undefined) ??
-      collections.find((c) => c.name === config.defaultCollection);
+    if (!config.defaultCollectionId) return;
+
+    const match = collections.find((c) => c.id === config.defaultCollectionId);
 
     if (match) {
       form.setValue('collection', {
         ownerId: match.ownerId,
         id: match.id,
         name: match.name,
+      });
+    } else {
+      toast({
+        title: 'Default collection not found',
+        description:
+          'Your configured default collection no longer exists. Please update it in the Options.',
+        variant: 'destructive',
       });
     }
   }, [collections, config, form]);
@@ -300,11 +303,11 @@ const BookmarkForm = () => {
                           {loadingCollections
                             ? 'Unorganized'
                             : field.value?.name
-                            ? collections?.find(
-                                (collection: { name: string }) =>
-                                  collection.name === field.value?.name
-                              )?.name || form.getValues('collection')?.name
-                            : 'Select a collection...'}
+                              ? collections?.find(
+                                  (collection: { name: string }) =>
+                                    collection.name === field.value?.name
+                                )?.name || form.getValues('collection')?.name
+                              : 'Select a collection...'}
                           <CaretSortIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </FormControl>
